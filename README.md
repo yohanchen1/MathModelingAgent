@@ -1,4 +1,4 @@
-# 数学建模代理 (MathModelingAgent) - v2.0
+# 数学建模代理 (MathModelingAgent) - v2.1
 
 ---
 
@@ -54,12 +54,11 @@
     ```
 
 4.  **配置API密钥**
-    本项目中的API密钥和模型已根据您的要求，在 `code/agent.py` 脚本中硬编码：
-    ```python
-    API_KEY = "sk-KAdal9IRxAROnEA53aD2DfC6DdD24dDaBbAf3a13FbC5513e"
-    MODEL_NAME = "gemini-2.5-flash"
+    为了运行代理，您需要一个有效的Gemini API密钥。请在项目的根目录下创建一个名为 `.env` 的文件，并按以下格式填入您的密钥：
     ```
-    如果需要更换，请直接修改此文件。
+    GEMINI_API_KEY="在这里填入您的API密钥"
+    ```
+    `agent.py` 脚本会自动从此文件中加载密钥。您也可以选择性地在 `.env` 文件中覆盖 `MODEL_NAME` 和 `BASE_URL`。
 
 ## 使用指南 (Usage)
 
