@@ -3,7 +3,7 @@
 This script implements a sophisticated workflow:
 1.  Problem Extraction: It first reads a PDF and asks the LLM to identify and list out the distinct problems.
 2.  Sequential Solving: It then tackles each problem one by one.
-3.  Iterative Refinement: For each problem, it uses a Model -> Analyze -> Correct loop to refine the solution.
+3.  Iterative Refinement: For each problem, it uses a multi-round Model -> Analyze -> Correct loop with acceptance and rejection criteria to robustly refine the solution.
 """
 
 import os
@@ -120,7 +120,6 @@ def generate_with_thinking(system_prompt: str, user_prompt: str, thinking_log_pa
         print("Error: GEMINI_API_KEY environment variable not set. Please create a .env file and add your API key.")
         sys.exit(1)
 
-    # Ensure the logs directory exists
     os.makedirs(LOGS_DIR, exist_ok=True)
     full_thinking_log_path = os.path.join(LOGS_DIR, thinking_log_path)
 
@@ -176,62 +175,92 @@ def extract_problems(full_text: str) -> list[str]:
     print(f"Successfully extracted {len(cleaned_problems)} problems.")
     return cleaned_problems
 
+def parse_verdict(analysis_text: str) -> str:
+    """Parses the final verdict from the analyzer's response."""
+    verdict_match = re.search(r"FINAL VERDICT: \[(.*?)\]", analysis_text)
+    if verdict_match:
+        return verdict_match.group(1)
+    return "Unknown"
+
 def run_solution_workflow_for_problem(problem_text: str, attachments_info: str, problem_index: int, previous_solutions: list[str]):
     setup_logging(f"run_log_problem_{problem_index + 1}.txt")
     print(f"\n{'='*25} Solving Problem {problem_index + 1} of {len(previous_solutions)+1} {'='*25}")
     print(f"Problem Statement:\n{problem_text}")
 
-    context = "".join(f"### Solution to Problem {i+1}\n{sol}\n\n" for i, sol in enumerate(previous_solutions))
-    user_prompt = f"{context}### Attachments Information\n{attachments_info}\n\n### Current Problem to Solve:\n{problem_text}"
+    # --- ITERATION CONTROL PARAMETERS ---
+    max_iterations = 10  # Rejection criteria
+    consecutive_passes_needed = 3 # Acceptance criteria
+    # -------------------------------------
 
+    iteration_count = 0
+    consecutive_passes = 0
     current_solution = None
-    previous_solution = None
-    analysis = None
-    max_iterations = 2
+    analysis = "Initial analysis before first modeling attempt."
 
-    for i in range(1, max_iterations + 1):
-        print(f"\n{'-'*20} Iteration {i} {'-'*20}")
+    # Initial modeling context
+    context = "".join(f"### Solution to Problem {i+1}\n{sol}\n\n" for i, sol in enumerate(previous_solutions))
+    initial_user_prompt = f"{context}### Attachments Information\n{attachments_info}\n\n### Current Problem to Solve:\n{problem_text}"
 
-        if i == 1:
-            print(f"--- Step 1.{i}: Contacting Modeler Agent ---")
-            thinking_log_path = f"thinking_log_problem_{problem_index+1}_modeler_{i}.txt"
-            current_solution = generate_with_thinking(MODELER_SYSTEM_PROMPT, user_prompt, thinking_log_path)
+    while iteration_count < max_iterations:
+        iteration_count += 1
+        print(f"\n{'-'*20} Iteration {iteration_count} {'-'*20}")
+
+        # --- Step 1: Modeling or Correction ---
+        if iteration_count == 1:
+            print(f"--- Step 1.{iteration_count}: Contacting Modeler Agent for Initial Solution ---")
+            thinking_log_path = f"thinking_log_problem_{problem_index+1}_modeler_{iteration_count}.txt"
+            current_solution = generate_with_thinking(MODELER_SYSTEM_PROMPT, initial_user_prompt, thinking_log_path)
         else:
-            print(f"--- Step 1.{i}: Contacting Modeler Agent for Correction ---")
-            correction_user_prompt = f"### Previous Solution:\n{previous_solution}\n\n### Critique:\n{analysis}"
-            thinking_log_path = f"thinking_log_problem_{problem_index+1}_modeler_{i}.txt"
+            print(f"--- Step 1.{iteration_count}: Contacting Modeler Agent for Correction ---")
+            correction_user_prompt = f"### Previous Solution:\n{current_solution}\n\n### Critique from last iteration:\n{analysis}"
+            thinking_log_path = f"thinking_log_problem_{problem_index+1}_modeler_{iteration_count}.txt"
             current_solution = generate_with_thinking(CORRECTION_PROMPT, correction_user_prompt, thinking_log_path)
 
         if not current_solution:
-            print(f"Modeler Agent failed in iteration {i}. Aborting this problem.")
+            print(f"Modeler Agent failed in iteration {iteration_count}. Aborting this problem.")
             return None
         
-        print(f"--- Modeler Agent's Solution (Iteration {i}) ---\n{current_solution}\n---------------------------------")
-        previous_solution = current_solution
+        print(f"--- Modeler Agent's Solution (Iteration {iteration_count}) ---\n{current_solution}\n---------------------------------")
 
-        print(f"\n--- Step 2.{i}: Contacting Analyzer Agent ---")
+        # --- Step 2: Analysis of the new solution ---
+        print(f"\n--- Step 2.{iteration_count}: Contacting Analyzer Agent for Verification ---")
         analyzer_user_prompt = f"""Please analyze the following solution for the specific problem: '{problem_text[:100]}...'\n\n---\n{current_solution}\n---"""
-        thinking_log_path = f"thinking_log_problem_{problem_index+1}_analyzer_{i}.txt"
+        thinking_log_path = f"thinking_log_problem_{problem_index+1}_analyzer_{iteration_count}.txt"
         analysis = generate_with_thinking(ANALYZER_SYSTEM_PROMPT, analyzer_user_prompt, thinking_log_path)
         
         if not analysis:
-            print(f"Analyzer Agent failed in iteration {i}. Using current solution as final.")
-            break
+            print(f"Analyzer Agent failed in iteration {iteration_count}. Aborting this problem.")
+            return None
             
-        print(f"""--- Analyzer Agent's Critique (Iteration {i}) ---\n{analysis}
+        print(f"""--- Analyzer Agent's Critique (Iteration {iteration_count}) ---\n{analysis}
 ----------------------------------""")
 
-    print(f"\nWorkflow complete for problem {problem_index + 1}.")
-    return current_solution
+        # --- Step 3: Check Verdict and Control Loop ---
+        verdict = parse_verdict(analysis)
+        print(f"Analyzer Verdict: {verdict}")
+
+        if verdict == "Excellent":
+            consecutive_passes += 1
+            print(f"Solution passed validation. Consecutive passes: {consecutive_passes}/{consecutive_passes_needed}")
+            if consecutive_passes >= consecutive_passes_needed:
+                print(f"\nSolution for Problem {problem_index + 1} has been accepted after {consecutive_passes} consecutive passes.")
+                return current_solution # SUCCESS EXIT
+        else:
+            # Any verdict other than Excellent means issues were found, so reset the pass counter.
+            print("Issues found. Resetting consecutive pass counter and continuing to next correction iteration.")
+            consecutive_passes = 0
+
+    # If the loop finishes, it means we hit the max_iterations limit
+    print(f"\nFailed to produce a satisfactory solution for Problem {problem_index + 1} after {max_iterations} iterations. Aborting.")
+    return None # FAILURE EXIT
 
 # --- MAIN EXECUTION BLOCK ---
 
 if __name__ == "__main__":
     setup_cache()
-    # Create plots directory
     os.makedirs(PLOTS_DIR, exist_ok=True)
 
-    parser = argparse.ArgumentParser(description="Math Modeling Agent - Sequential Solver v7")
+    parser = argparse.ArgumentParser(description="Math Modeling Agent - v3.0 with Iterative Refinement")
     parser.add_argument('--dir', '-d', type=str, required=True, help='Path to the problem directory.')
     args = parser.parse_args()
 
@@ -262,20 +291,9 @@ if __name__ == "__main__":
 
     final_solutions = []
     for i, problem_text in enumerate(problems_to_solve):
-        # The solution from the LLM will contain python code that saves plots.
-        # I will modify the code string to save plots to the correct directory.
         solution_code = run_solution_workflow_for_problem(problem_text, attachments_info, i, final_solutions)
         if solution_code:
-            # Modify the code to save plots to the correct directory
-            modified_code = solution_code.replace("plt.savefig('", f"plt.savefig('{PLOTS_DIR.replace('\\', '/')}/")
-            final_solutions.append(modified_code)
-            # Execute the modified code
-            try:
-                # I will not execute the code, as it is not safe.
-                # The user can run the code from the log files.
-                pass
-            except Exception as e:
-                print(f"Error executing solution code for problem {i+1}: {e}")
+            final_solutions.append(solution_code)
         else:
             print(f"Could not generate a final solution for Problem {i+1}. Stopping.")
             break
