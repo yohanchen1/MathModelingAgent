@@ -1,0 +1,1203 @@
+
+========================= Solving Problem 3 of 3 =========================
+Problem Statement:
+问题3 根据该水文站水沙通量的变化规律，预测分析该水文站未来两年水沙通量的变化趋势，并为该水文站制订未来两年最优的采样监测方案（采样监测次数和具体时间等），使其既能及时掌握水沙通量的动态变化情况，又能最大程度地减少监测成本资源。
+
+-------------------- Iteration 1 --------------------
+--- Step 1.1: Contacting Modeler Agent ---
+Cache miss for API request. Generating... See thinking log: thinking_log_problem_3_modeler_1.txt
+--- Modeler Agent's Solution (Iteration 1) ---
+**1. Problem Analysis**
+
+*   **Restatement of the Problem:**
+    The problem has two main objectives:
+    1.  To predict the future trends of water flow rate (Q) and sediment concentration (S) at the given hydrological station for the next two years. This involves leveraging historical data to extrapolate expected hydrological patterns.
+    2.  To formulate an optimal and cost-effective sampling monitoring plan for these predicted two years. This plan must specify the sampling frequency and exact sampling times, ensuring that dynamic changes in water and sediment discharge are adequately captured while simultaneously minimizing monitoring costs.
+
+*   **Key Objectives of the Model:**
+    *   **Forecasting:** To provide reliable forecasts for daily water flow rate and sediment concentration for the next two calendar years, considering historical trends and seasonal patterns.
+    *   **Cost-Benefit Optimization (Heuristic):** To design a sampling schedule that intelligently balances the need for high-frequency data during periods of high hydrological variability (to capture dynamics) with low-frequency data during stable periods (to reduce costs).
+    *   **Actionable Plan:** To deliver a clear, day-by-day sampling schedule for the next two years.
+
+*   **Relevant Variables and Constraints:**
+    *   **Input Data (from previous problems' preprocessing):**
+        *   `Time`: Daily timestamp (datetime object).
+        *   `FlowRate` (Q): Daily average water flow rate (m³/s).
+        *   `SedimentConcentration` (S): Daily average sediment concentration (kg/m³).
+    *   **Output Variables:**
+        *   `Predicted_FlowRate`: Forecasted daily water flow rate for the next two years (m³/s).
+        *   `Predicted_SedimentConcentration`: Forecasted daily sediment concentration for the next two years (kg/m³).
+        *   `Sampling_Dates`: Specific dates and times for monitoring activities.
+        *   `Total_Samples`: Total count of samples over the two-year period (proxy for cost).
+    *   **Constraints:**
+        *   **Prediction Horizon:** The forecast and sampling plan must cover the next two *full calendar years* following the last complete year of historical data.
+        *   **Dynamic Capture:** The sampling plan must be frequent enough to capture known seasonal peaks, troughs, and rapid changes in Q and S.
+        *   **Cost Minimization:** The plan should aim to reduce the total number of samples taken without compromising the ability to capture essential dynamics. This implies variable sampling frequency.
+        *   **Data Quality:** The forecasting and planning rely on the accuracy and representativeness of the preprocessed historical data.
+        *   **Physical Realism:** Predicted Q and S values must be non-negative.
+
+**2. Model Assumptions**
+
+*   **Persistence of Hydrological Patterns:**
+    *   **Assumption:** The underlying hydrological regime, including trends, seasonality, and the statistical relationships (e.g., between Q and S, their individual patterns), observed in the historical data will continue largely unchanged for the next two-year forecast horizon. No major new dams, significant land-use changes, or extreme climate shifts are assumed to drastically alter the river's behavior within this short period.
+    *   **Justification:** Short-term forecasting typically relies on the assumption of continuity in existing patterns. Without external information, historical data is the best predictor of future behavior.
+*   **Time Series Decomposition Model:**
+    *   **Assumption:** An additive time series model (Observed = Trend + Seasonal + Residual) is sufficient for decomposing and forecasting water flow rate and sediment concentration.
+    *   **Justification:** Additive models are simpler to implement and generally robust. While multiplicative models might be more appropriate if the magnitude of seasonality scales with the series level (common in hydrology), the additive model avoids issues with zero values and provides a clear separation of components for forecasting.
+*   **Linear Trend Extrapolation:**
+    *   **Assumption:** The long-term trend component of both water flow rate and sediment concentration can be accurately extrapolated using a simple linear regression model.
+    *   **Justification:** For a short two-year forecast horizon, a linear trend is a reasonable first approximation, especially if no significant acceleration or deceleration is apparent in the historical trend.
+*   **Repeating Seasonality:**
+    *   **Assumption:** The seasonal component for the forecast period will exactly repeat the pattern observed in the most recent full year of historical data.
+    *   **Justification:** Seasonality is often highly regular on an annual cycle in hydrological data. Repeating the most recent pattern is a standard approach when long-term shifts in seasonality are not anticipated.
+*   **Negligible Residuals for Forecasting:**
+    *   **Assumption:** The residual (error) component from the time series decomposition is assumed to be random noise with a mean of zero and thus contributes no predictable component to the forecast. The forecast is primarily based on the sum of the predicted trend and seasonal components.
+    *   **Justification:** For practical forecasting, it's common to assume residuals are unforecastable white noise. More advanced models might try to model residual autocorrelation, but this adds complexity beyond the problem's scope.
+*   **Monitoring Cost Proportionality:**
+    *   **Assumption:** The total monitoring cost is directly proportional to the total number of samples taken. Each sample incurs an equal, fixed cost.
+    *   **Justification:** This is a simplification. In reality, there might be fixed setup costs, volume discounts, or travel costs that are not directly per-sample. However, for "maximizing reduction of monitoring cost resources," minimizing the sample count is a valid and straightforward proxy.
+*   **Adaptive Sampling Effectiveness:**
+    *   **Assumption:** By varying sampling frequency based on predicted hydrological activity levels (High, Medium, Low), the plan effectively captures dynamic changes while reducing costs. High activity periods require more frequent sampling, and vice-versa.
+    *   **Justification:** This is a widely accepted heuristic in environmental monitoring. Periods of rapid change or extreme events require denser monitoring to characterize them accurately, while stable periods allow for sparser monitoring without significant loss of information.
+*   **Optimal Plan Heuristic:**
+    *   **Assumption:** The "optimal" plan is defined heuristically as one that balances the problem's objectives using an intelligent, rule-based adaptive sampling strategy, rather than a solution derived from a formal mathematical optimization problem with an explicitly defined objective function and constraints solvable by a numerical optimizer.
+    *   **Justification:** The problem statement's qualitative nature ("timely mastery," "maximum reduction") suggests a practical, justifiable heuristic is expected rather than a complex, potentially intractable, mathematical optimization.
+
+**3. Model Formulation**
+
+**Part A: Prediction of Water and Sediment Discharge Trends**
+
+*   **Prediction Model:** We will use a seasonal time series decomposition approach. For each series (Water Flow Rate $Q_t$ and Sediment Concentration $S_t$):
+    $Y_t = T_t + C_t + R_t$
+    where:
+    *   $Y_t$: The observed value at time $t$ (either $Q_t$ or $S_t$).
+    *   $T_t$: The trend component at time $t$.
+    *   $C_t$: The seasonal component at time $t$.
+    *   $R_t$: The residual (random noise) component at time $t$.
+
+*   **Forecasting Steps:**
+    1.  **Decomposition:** Apply `statsmodels.tsa.seasonal.seasonal_decompose` to the historical daily time series of $Q_t$ and $S_t$ using an additive model and a period of 365 days (for annual seasonality).
+    2.  **Trend Forecasting:**
+        *   Extract the trend component $T_t$ from the decomposition.
+        *   Fit a linear regression model: $T_t = m \cdot t + b$, where $m$ is the slope and $b$ is the intercept.
+        *   Extrapolate this linear trend for the next 2 years (730 days) to get $T'_t$.
+    3.  **Seasonal Forecasting:**
+        *   Extract the seasonal component $C_t$ from the decomposition.
+        *   Repeat the last full year's (365 days) seasonal pattern for the next 2 years to get $C'_t$.
+    4.  **Reconstruction:** The predicted value for each future day $t'$ is $Y'_{t'} = T'_{t'} + C'_{t'}$.
+    5.  **Non-negativity Constraint:** Ensure all predicted values $Y'_{t'}$ are non-negative; set any negative predictions to zero.
+
+**Part B: Optimal Sampling Monitoring Plan**
+
+*   **Optimization Criteria:** Balance information capture (ability to observe dynamics) and cost reduction (minimizing samples).
+*   **Strategy:** Implement an adaptive, variable sampling frequency plan based on expected hydrological activity.
+
+*   **Steps:**
+    1.  **Analyze Historical Monthly Activity:**
+        *   Calculate the average `FlowRate` for each month (January to December) across all historical data.
+        *   Rank the months (1-12) based on their average `FlowRate` from highest to lowest.
+    2.  **Categorize Months into Activity Tiers:**
+        *   **High Activity Months (H):** The top 4 months with the highest average `FlowRate`.
+        *   **Medium Activity Months (M):** The middle 4 months in terms of average `FlowRate`.
+        *   **Low Activity Months (L):** The bottom 4 months with the lowest average `FlowRate`.
+    3.  **Define Sampling Frequencies for Each Tier:**
+        *   **High Activity (H):** Sample 4 times a week (e.g., Monday, Wednesday, Friday, Sunday). This ensures high density during peak periods.
+        *   **Medium Activity (M):** Sample 2 times a week (e.g., Monday, Thursday). This captures moderate variability effectively.
+        *   **Low Activity (L):** Sample 1 time a week (e.g., Monday). This provides a baseline monitoring during stable periods, minimizing costs.
+    4.  **Generate Specific Sampling Schedule:**
+        *   Determine the two full calendar years for the plan (e.g., if historical data ends on Dec 31, 2023, the plan is for 2024 and 2025).
+        *   For each day in these two years:
+            *   Identify its month.
+            *   Determine its activity tier (H, M, or L) based on the categorization from Step 2.
+            *   If the day of the week matches the defined sampling days for that tier (e.g., Monday for Low, Mon/Thu for Medium, Mon/Wed/Fri/Sun for High), add it to the list of sampling dates.
+    5.  **Calculate and Present Total Samples:** Sum the total number of unique sampling dates for each year and for the entire two-year period. Compare this total with hypothetical fixed daily or weekly sampling plans to highlight cost savings.
+    6.  **Output:** Print the detailed sampling dates for each year, grouped by month for readability.
+
+**4. Solution Plan**
+
+1.  **Data Loading and Preprocessing:**
+    *   Load all provided Excel files (`附件1.xlsx`, `附件2.xlsx`, `附件3.xlsx`).
+    *   Identify the primary data file containing 'Time', 'Water Level', 'Flow Rate', and 'Sediment Concentration' columns using a robust column name matching strategy.
+    *   Standardize column names to 'Time', 'WaterLevel', 'FlowRate', 'SedimentConcentration'.
+    *   Convert 'Time' column to datetime objects and set as index, then sort.
+    *   Resample data to a consistent daily frequency (`.resample('D').mean()`).
+    *   Fill small gaps using linear interpolation (`.interpolate(method='linear')`).
+    *   Drop any remaining rows with NaN values in critical columns.
+    *   Ensure all numerical columns are of float type.
+
+2.  **Trend Prediction (Part A - Forecasting):**
+    *   Identify the last full calendar year of data to set the start of the prediction period.
+    *   For `FlowRate` and `SedimentConcentration`:
+        *   Perform seasonal decomposition using `statsmodels.tsa.seasonal.seasonal_decompose(series, model='additive', period=365)`.
+        *   Extract the trend component. Fit a `sklearn.linear_model.LinearRegression` model to this trend.
+        *   Extrapolate the linear trend for the next 730 days (two years).
+        *   Extract the seasonal component. Repeat the last 365 days of the seasonal component for the next 730 days.
+        *   Combine the forecasted trend and seasonal components to get the final prediction.
+        *   Ensure predicted values are non-negative.
+        *   Plot historical data with predictions for visualization.
+
+3.  **Sampling Plan Generation (Part B - Optimization):**
+    *   Calculate the average `FlowRate` for each month (1-12) over the entire historical `main_df`.
+    *   Categorize months into 'High', 'Medium', 'Low' activity based on these average flow rates (e.g., top 4, middle 4, bottom 4 months).
+    *   Define the target two calendar years for the sampling plan (e.g., Year Y and Year Y+1, where Y is the year after the last full historical year).
+    *   Initialize empty lists for sampling dates for each of the two years.
+    *   Iterate through each day of the target two years:
+        *   Determine the month of the current day.
+        *   Based on the month's activity category, check if the current day of the week (e.g., Monday, Wednesday, etc.) is designated as a sampling day.
+        *   If it is, add the date to the corresponding year's sampling list.
+    *   Count total samples for each year and across the two years.
+    *   Present the total sample counts and list all specific sampling dates.
+    *   Discuss the cost-effectiveness by comparing with fixed daily/weekly sampling.
+
+**5. Code Implementation**
+
+```python
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from statsmodels.tsa.seasonal import seasonal_decompose
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import os
+import warnings
+
+# Suppress specific warnings for cleaner output
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
+warnings.filterwarnings("ignore", category=RuntimeWarning) # For issues like mean of empty slice
+
+def solve():
+    # --- 1. Problem Analysis & Setup (See detailed analysis above) ---
+
+    # --- 2. Data Preparation (Re-using robust logic from previous solution) ---
+
+    # Get the directory of the current script for relative file paths
+    script_dir = os.path.dirname(__file__) if '__file__' in locals() else os.getcwd()
+    file_paths = [
+        os.path.join(script_dir, '附件1.xlsx'),
+        os.path.join(script_dir, '附件2.xlsx'),
+        os.path.join(script_dir, '附件3.xlsx')
+    ]
+
+    print("--- Data Loading and Initial Inspection ---")
+    dataframes = {}
+    for i, file_path in enumerate(file_paths):
+        try:
+            df = pd.read_excel(file_path)
+            dataframes[f'df{i+1}'] = df
+        except Exception as e:
+            print(f"Error loading {file_path}: {e}")
+
+    # --- Identify Primary DataFrame ---
+    required_col_sets = {
+        'Time': ['时间', 'Time', '日期', 'tm'],
+        'WaterLevel': ['水位', 'WaterLevel', 'H'],
+        'FlowRate': ['水流量', 'FlowRate', 'Q'],
+        'SedimentConcentration': ['含沙量', 'SedimentConcentration', 'S']
+    }
+
+    main_df = None
+    print("\n--- Identifying Primary Data File ---")
+    for df_name, df_content in dataframes.items():
+        found_cols_map = {}
+        all_cols_found = True
+        for english_name, possible_names in required_col_sets.items():
+            col_found_for_set = False
+            for p_name in possible_names:
+                if p_name in df_content.columns:
+                    found_cols_map[english_name] = p_name
+                    col_found_for_set = True
+                    break
+            if not col_found_for_set:
+                all_cols_found = False
+                break
+        
+        if all_cols_found:
+            print(f"'{df_name}' identified as primary data file. Found all required columns.")
+            main_df = df_content.copy()
+            rename_dict = {actual_name: std_name for std_name, actual_name in found_cols_map.items()}
+            main_df = main_df.rename(columns=rename_dict)
+            print(f"Columns renamed to standard: {rename_dict}")
+            break
+    
+    if main_df is None:
+        print("\nError: Could not find a primary data file with all required columns in any attachment.")
+        return
+
+    # --- Data Preprocessing ---
+    print("\n--- Data Preprocessing ---")
+
+    initial_rows = len(main_df)
+    main_df['Time'] = pd.to_datetime(main_df['Time'], errors='coerce')
+    main_df.set_index('Time', inplace=True)
+    main_df.sort_index(inplace=True)
+    main_df.dropna(subset=['Time'], inplace=True)
+    print(f"Removed {initial_rows - len(main_df)} rows due to unparseable 'Time' values.")
+
+    numeric_cols = ['FlowRate', 'WaterLevel', 'SedimentConcentration']
+    for col in numeric_cols:
+        main_df[col] = pd.to_numeric(main_df[col], errors='coerce')
+    
+    main_df_resampled = main_df.resample('D').mean()
+    print(f"Data points before daily resampling: {initial_rows}")
+    print(f"Data points after daily resampling: {len(main_df_resampled)}")
+
+    main_df_resampled.interpolate(method='linear', limit_direction='both', limit_area='inside', inplace=True)
+    print(f"Data points after linear interpolation: {len(main_df_resampled)}")
+
+    rows_before_final_dropna = len(main_df_resampled)
+    main_df_resampled.dropna(subset=numeric_cols, inplace=True)
+    rows_after_final_dropna = len(main_df_resampled)
+    print(f"Dropped {rows_before_final_dropna - rows_after_final_dropna} rows with remaining NaN values (large gaps).")
+    print(f"Final cleaned data points: {rows_after_final_dropna}")
+
+    main_df = main_df_resampled # Use the cleaned, resampled DataFrame
+
+    # Check for sufficient data for forecasting and decomposition
+    if len(main_df) < 365 * 2: 
+        print("Warning: Insufficient data points after preprocessing for reliable long-term forecasting (less than 2 full years). Forecast results may be unreliable.")
+
+    # --- 3. Model Formulation & 4. Solution Plan (Code Implementation) ---
+
+    # Part A: Prediction of Water and Sediment Discharge Trends (Next 2 Years)
+
+    print("\n--- Part A: Prediction of Water and Sediment Discharge Trends ---")
+    prediction_horizon_days = 365 * 2 # Next two years for the plan
+    
+    # Determine the start date for prediction (Jan 1 of the year after the last full year in historical data)
+    last_historical_date = main_df.index.max()
+    start_prediction_year = last_historical_date.year + 1
+    # If the last historical date is not Dec 31, then the "next" full calendar year starts from the year after the last full year.
+    if not (last_historical_date.month == 12 and last_historical_date.day == 31):
+        start_prediction_year = last_historical_date.year + 1 
+    
+    # Generate future dates for prediction
+    future_dates = pd.date_range(start=pd.Timestamp(start_prediction_year, 1, 1), periods=prediction_horizon_days, freq='D')
+
+    predicted_df = pd.DataFrame(index=future_dates)
+    
+    for col in ['FlowRate', 'SedimentConcentration']:
+        if col not in main_df.columns or len(main_df[col].dropna()) < 365 * 1.5: 
+            print(f"Skipping forecasting for {col} due to insufficient data or missing column (requires at least ~1.5 years).")
+            continue
+
+        series = main_df[col].dropna() # Use non-NaN part for decomposition
+        
+        # Reindex to a complete daily range and interpolate to ensure no NaNs for decomposition
+        series_reindexed = series.reindex(pd.date_range(start=series.index.min(), end=series.index.max(), freq='D')).interpolate(method='linear')
+        
+        if len(series_reindexed) < 2 * 365: # Needs at least two full years for robust seasonality
+             print(f"Warning: Series for {col} ({len(series_reindexed)} days) is shorter than 2 full years for robust seasonal decomposition. Forecast might be less accurate.")
+
+        try:
+            # Seasonal Decomposition
+            decomposition = seasonal_decompose(series_reindexed, model='additive', period=365, extrapolate_trend='freq')
+            
+            # 1. Forecast Trend: Fit linear regression to the trend component
+            trend_series = decomposition.trend.dropna() # Drop NaNs at ends if any still exist
+            x_trend = np.arange(len(trend_series)).reshape(-1, 1)
+            y_trend = trend_series.values
+            
+            if len(trend_series) > 1: # Need at least 2 points for linear regression
+                trend_model = LinearRegression()
+                trend_model.fit(x_trend, y_trend)
+                
+                # Predict future trend
+                # x-values for prediction start from the end of the historical series
+                future_x_trend = np.arange(len(series_reindexed), len(series_reindexed) + prediction_horizon_days).reshape(-1, 1)
+                forecasted_trend = trend_model.predict(future_x_trend)
+            else:
+                print(f"Warning: Not enough data points in trend for {col} for linear regression. Using last trend value as constant forecast.")
+                forecasted_trend = np.full(prediction_horizon_days, trend_series.iloc[-1] if not trend_series.empty else series.mean()) # Fallback constant
+
+            # 2. Forecast Seasonality: Repeat the last full year's seasonal pattern
+            seasonal_series = decomposition.seasonal
+            # Ensure we take exactly one full period (365 days) and tile it for the forecast horizon
+            # If historical data is shorter than 365, this will error. Ensure series_reindexed is long enough.
+            if len(seasonal_series) >= 365:
+                forecasted_seasonal = np.tile(seasonal_series[-365:].values, int(np.ceil(prediction_horizon_days / 365)))[:prediction_horizon_days]
+            else:
+                print(f"Warning: Historical data for {col} is shorter than 365 days. Cannot derive full annual seasonality. Setting seasonal component to 0.")
+                forecasted_seasonal = np.zeros(prediction_horizon_days)
+
+            # 3. Reconstruct Forecast (Trend + Seasonal, assuming residuals average to zero)
+            forecasted_series = forecasted_trend + forecasted_seasonal
+            
+            # Ensure non-negative predictions for physical quantities
+            forecasted_series[forecasted_series < 0] = 0
+
+            predicted_df[col] = forecasted_series
+
+            # Plotting Forecast
+            plt.figure(figsize=(15, 7))
+            plt.plot(series.index, series, label=f'Historical {col}', color='blue', alpha=0.7)
+            plt.plot(predicted_df.index, predicted_df[col], label=f'Forecasted {col}', color='red', linestyle='--')
+            
+            # Plot trend component
+            if 'decomposition' in locals() and decomposition.trend is not None:
+                plt.plot(decomposition.trend.index, decomposition.trend, label=f'Historical Trend ({col})', color='green', linestyle=':', alpha=0.7)
+            if 'forecasted_trend' in locals(): # Only if trend was successfully forecasted
+                plt.plot(future_dates, forecasted_trend, label=f'Forecasted Trend ({col})', color='purple', linestyle=':', alpha=0.7)
+
+            plt.title(f'Historical and Forecasted {col} for Next 2 Years ({start_prediction_year}-{start_prediction_year+1})')
+            plt.xlabel('Date')
+            plt.ylabel(col)
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(f'forecast_{col}.png')
+            plt.close()
+            print(f"Generated 'forecast_{col}.png'.")
+
+        except Exception as e:
+            print(f"Error during forecasting for {col}: {e}")
+
+    # Part B: Optimal Sampling Monitoring Plan
+
+    print("\n--- Part B: Optimal Sampling Monitoring Plan ---")
+
+    # 1. Analyze Historical Monthly Variability for categorization
+    main_df['month'] = main_df.index.month
+    
+    # Calculate average monthly flow rate for categorization
+    monthly_avg_Q = main_df.groupby('month')['FlowRate'].mean().sort_values(ascending=False)
+    
+    print("\nHistorical Monthly Average Flow Rate (m³/s):")
+    print(monthly_avg_Q)
+
+    # 2. Categorize Months into Activity Tiers (High, Medium, Low)
+    num_months_data = len(monthly_avg_Q)
+    month_categories = {}
+    
+    if num_months_data >= 12: # Full 12 months of data for robust categorization
+        sorted_months_by_Q = monthly_avg_Q.index.tolist()
+        
+        # Top 4 months (highest average FlowRate): High activity
+        high_activity_months = sorted_months_by_Q[:4]
+        # Bottom 4 months (lowest average FlowRate): Low activity
+        low_activity_months = sorted_months_by_Q[8:] # Indices 8,9,10,11 for 0-indexed list
+        # Middle 4 months: Medium activity
+        medium_activity_months = sorted_months_by_Q[4:8]
+
+        for m in range(1, 13):
+            if m in high_activity_months:
+                month_categories[m] = 'High'
+            elif m in medium_activity_months:
+                month_categories[m] = 'Medium'
+            elif m in low_activity_months:
+                month_categories[m] = 'Low'
+    else:
+        print("Warning: Less than 12 unique months in historical data. Categorization might be less reliable.")
+        # Default to 'Medium' for all months if not enough data for robust categorization
+        for m in range(1, 13):
+            month_categories[m] = 'Medium' 
+    
+    print("\nMonthly Activity Categories (based on FlowRate):")
+    for month_num in range(1, 13):
+        print(f"Month {month_num:2d}: {month_categories.get(month_num, 'N/A')}")
+
+    # 3. Define Sampling Frequencies for Each Tier (Days of the week to sample)
+    sampling_frequency_map = {
+        'High': ['Monday', 'Wednesday', 'Friday', 'Sunday'], # 4 times/week
+        'Medium': ['Monday', 'Thursday'],                     # 2 times/week
+        'Low': ['Monday']                                     # 1 time/week
+    }
+
+    # 4. Generate Specific Sampling Schedule for the Next Two Years
+    
+    # The plan covers the two full calendar years AFTER the last full year of historical data.
+    # If historical data ends mid-year, e.g., 2023-07-15, then last full year is 2022.
+    # Plan starts 2023 and 2024. If historical data ends 2023-12-31, plan starts 2024 and 2025.
+    
+    plan_start_year = start_prediction_year # This was defined earlier for the forecast
+    plan_end_year = plan_start_year + 1 
+
+    sampling_dates_year1 = []
+    sampling_dates_year2 = []
+    total_samples_year1 = 0
+    total_samples_year2 = 0
+
+    print(f"\n--- Proposed Sampling Plan for Year {plan_start_year} and Year {plan_end_year} ---")
+
+    for year in [plan_start_year, plan_end_year]:
+        current_sampling_dates = []
+        
+        # Loop through each month of the year
+        for month_num in range(1, 13):
+            activity_level = month_categories.get(month_num, 'Medium') # Fallback
+            days_to_sample = sampling_frequency_map[activity_level]
+
+            # Generate all days for the current month and year
+            start_date = pd.Timestamp(year, month_num, 1)
+            end_date = start_date + pd.offsets.MonthEnd(0)
+            
+            for d_idx in pd.date_range(start=start_date, end=end_date, freq='D'):
+                if d_idx.day_name() in days_to_sample:
+                    current_sampling_dates.append(d_idx)
+        
+        if year == plan_start_year:
+            sampling_dates_year1 = current_sampling_dates
+            total_samples_year1 = len(current_sampling_dates)
+        else:
+            sampling_dates_year2 = current_sampling_dates
+            total_samples_year2 = len(current_sampling_dates)
+    
+    print(f"\n--- Summary of Sampling Plan ---")
+    print(f"Total samples for Year {plan_start_year}: {total_samples_year1} samples.")
+    print(f"Total samples for Year {plan_end_year}: {total_samples_year2} samples.")
+    
+    total_samples_proposed = total_samples_year1 + total_samples_year2
+    print(f"Total proposed samples over two years: {total_samples_proposed} samples.")
+    
+    # Compare with alternative fixed frequency plans
+    # Note: These are approximations for 365/366 days, 52 weeks.
+    fixed_daily_samples = 365 + 365 # Approx 730 samples for two years
+    fixed_weekly_samples = 52 + 52  # Approx 104 samples for two years
+    print(f"\nComparison with Fixed Frequency Plans (approximate total over two years):")
+    print(f"  Fixed Daily Sampling (Highest Cost, Most Information): ~{fixed_daily_samples} samples.")
+    print(f"  Fixed Weekly Sampling (Lowest Cost, Risk of Missing Dynamics): ~{fixed_weekly_samples} samples.")
+    print(f"\nOur proposed adaptive plan ({total_samples_proposed} samples) offers a balance:")
+    print(f"- Reduces costs significantly compared to daily sampling (saving ~{fixed_daily_samples - total_samples_proposed} samples).")
+    print(f"- Aims to capture dynamic changes more effectively than fixed weekly sampling by increasing frequency during high activity periods.")
+
+    print(f"\n--- Detailed Sampling Schedule for Year {plan_start_year} ---")
+    print(f"Total {total_samples_year1} samples.")
+    # Print dates grouped by month for readability
+    current_month = None
+    for date in sorted(sampling_dates_year1):
+        if date.month != current_month:
+            current_month = date.month
+            print(f"\n  Month {current_month}:")
+        print(f"    {date.strftime('%Y-%m-%d (%a)')}")
+
+    print(f"\n--- Detailed Sampling Schedule for Year {plan_end_year} ---")
+    print(f"Total {total_samples_year2} samples.")
+    current_month = None
+    for date in sorted(sampling_dates_year2):
+        if date.month != current_month:
+            current_month = date.month
+            print(f"\n  Month {current_month}:")
+        print(f"    {date.strftime('%Y-%m-%d (%a)')}")
+
+# Call the solve function to execute the model
+if __name__ == "__main__":
+    solve()
+```
+
+**6. Results and Conclusion**
+
+The Python code was designed to execute the forecasting and sampling plan generation. Due to the environment's stateless nature, the exact numerical outputs for predictions and sampling dates cannot be provided here, but the code will print them upon execution.
+
+**Forecasted Trends (Output by Code):**
+The code will generate two plots (`forecast_FlowRate.png` and `forecast_SedimentConcentration.png`). These plots will visually represent:
+*   The historical daily data for Flow Rate and Sediment Concentration.
+*   The extracted historical trend component.
+*   The forecasted linear trend for the next two years.
+*   The final combined forecast (trend + repeating seasonality) for the next two years.
+
+The console output will also include print statements detailing the number of data points used for forecasting and any warnings if the data is insufficient for robust analysis. The predicted values for FlowRate and SedimentConcentration will show:
+*   A continuation of the observed historical trends (e.g., upward, downward, or stable).
+*   A clear superimposition of annual seasonality, reflecting the known cyclical patterns of water flow and sediment transport in the Yellow River. Periods of high flow/sediment (e.g., during summer flood season) and low flow/sediment (e.g., during dry season) will be visible in the predictions.
+
+**Optimal Sampling Monitoring Plan (Output by Code):**
+The console output will summarize the proposed sampling plan:
+*   **Monthly Activity Categories:** A breakdown of which months are categorized as 'High', 'Medium', or 'Low' activity based on historical average flow rate. This dictates the sampling frequency.
+*   **Total Samples:** The total number of proposed samples for each of the two forecast years, and the combined total. This will be compared against hypothetical fixed daily and fixed weekly sampling to demonstrate cost reduction.
+*   **Detailed Schedule:** A precise list of all sampling dates for each of the two forecast years, grouped by month and indicating the day of the week, allowing for direct implementation.
+
+**Interpretation of Results:**
+
+*   **Forecasting Accuracy:** The quality of the forecasts depends heavily on the assumption that historical patterns will persist. For a short, two-year horizon, this is often a reasonable assumption for hydrological processes with strong seasonality. The plots will visually confirm if the linear trend and repeating seasonality adequately capture the historical patterns and seem plausible for the future.
+*   **Adaptive Sampling Rationale:** The proposed adaptive sampling plan directly addresses the problem's dual objectives.
+    *   By increasing sampling frequency (e.g., 4 times/week) during 'High Activity' months (typically flood season, with high predicted Q and S and rapid changes), the plan ensures that critical dynamic variations are captured. This allows for timely monitoring of peak flows and sediment loads, which are vital for operational management and safety.
+    *   By reducing sampling frequency (e.g., 1 time/week) during 'Low Activity' months (typically dry season, with stable and low predicted Q and S), the plan significantly reduces monitoring costs without losing essential information, as variability is minimal during these periods.
+    *   The total number of samples will be significantly less than a fixed daily sampling plan, demonstrating substantial cost savings. It will be higher than a fixed weekly plan, but with the added benefit of targeted high-frequency monitoring during critical periods.
+*   **Practicality:** The output provides specific dates, making the plan actionable for the hydrological station's operations.
+
+**Limitations of the Model:**
+
+1.  **Forecasting Model Simplicity:**
+    *   **Linear Trend:** Assuming a strictly linear trend for two years might be too simplistic if the historical trend is non-linear or if environmental factors are causing a shift in the trend's trajectory.
+    *   **Additive Decomposition:** While robust, an additive model might not perfectly capture cases where the amplitude of seasonality is proportional to the overall level (multiplicative seasonality).
+    *   **No Residual Modeling:** Assuming residuals are pure noise means the model cannot capture any remaining complex patterns in the errors, potentially leading to small prediction inaccuracies.
+    *   **Unforeseen Events:** The model cannot predict abrupt, unexpected changes (e.g., extreme, unprecedented droughts or floods, or human-induced changes like new dam operations) that deviate from historical patterns.
+2.  **Sampling Plan Heuristics:**
+    *   **Fixed Frequencies:** The choice of "4 times/week," "2 times/week," etc., is heuristic and not derived from a formal cost-benefit optimization that quantifies information value. A truly "optimal" plan would require explicit costs (per sample, travel, analysis) and a quantified measure of "information value" or "risk of missing event."
+    *   **Monthly Categorization:** Categorizing months purely by average flow rate might overlook other factors influencing variability (e.g., rainfall variability, upstream operations). Also, the exact thresholds (top 4, middle 4, bottom 4) are somewhat arbitrary.
+    *   **Day of Week Bias:** Always sampling on specific days (e.g., Monday) for baseline might introduce bias if there are weekly patterns not related to hydrological processes (e.g., industrial discharges on certain weekdays).
+3.  **No Feedback Loop:** The plan is static for two years. A truly adaptive system would incorporate real-time monitoring data to adjust sampling frequency dynamically if unforeseen changes or deviations from predicted trends occur.
+
+**Potential Areas for Future Improvement:**
+
+1.  **Advanced Forecasting Models:** Employ more sophisticated time series models like SARIMA (Seasonal Autoregressive Integrated Moving Average) or Prophet for better trend and seasonality modeling, and potentially handle non-linear trends or more complex seasonal patterns. Machine learning models (e.g., LSTMs) could also be explored if enough data is available.
+2.  **Uncertainty Quantification in Forecasts:** Provide prediction intervals along with point forecasts to give an idea of the uncertainty in the predictions. This helps in understanding the risk associated with relying on the forecasts.
+3.  **Formal Optimization of Sampling Plan:** If a more precise definition of "information value" (e.g., reduction in mean squared error, detection probability of events) and detailed cost functions (fixed costs, variable costs, travel costs) could be established, a mathematical optimization framework (e.g., linear programming, dynamic programming) could be used to find a truly optimal sampling strategy.
+4.  **Dynamic Sampling Strategy:** Implement a feedback loop where real-time data is continuously analyzed. If deviations from predicted values or early indicators of an abrupt change are detected (e.g., using CUSUM charts on real-time data), the sampling frequency could be automatically increased temporarily, rather than relying solely on a pre-defined schedule.
+5.  **Multi-variate Considerations in Sampling:** While flow rate is a good proxy, consider incorporating the predicted variability of sediment concentration directly into the monthly categorization for sampling frequency, especially if its dynamics are significantly different from flow.
+6.  **Economic Justification:** Provide a more detailed economic analysis of the proposed plan versus alternatives, including the cost of missing critical events.
+7.  **Sensitivity Analysis:** Perform sensitivity analysis on the chosen thresholds for monthly categorization (e.g., how would the plan change if 'High' activity was defined as top 3 months instead of 4).
+---------------------------------
+
+--- Step 2.1: Contacting Analyzer Agent ---
+Cache miss for API request. Generating... See thinking log: thinking_log_problem_3_analyzer_1.txt
+--- Analyzer Agent's Critique (Iteration 1) ---
+The provided solution demonstrates a comprehensive understanding of the problem's requirements and offers a well-structured approach to both time series forecasting and heuristic-based adaptive sampling. The code implementation is robust, featuring excellent data preprocessing, error handling, and clear visualization.
+
+However, the solution contains several significant methodological and conceptual flaws. Primarily, the sampling strategy critically overlooks one of the two primary variables (sediment concentration) the problem asks to monitor. Additionally, key assumptions underpinning the model's structure (e.g., linear trends, additive seasonality) are chosen for simplicity rather than proven suitability for hydrological data, and the "optimality" of the sampling plan relies on arbitrary heuristic choices rather than formal justification.
+
+**Final Verdict:** Has significant flaws
+
+---
+
+**2. Detailed Critique**
+
+*   **Location:** "Assumption: Time Series Decomposition Model ... Justification: Additive models are simpler to implement and generally robust. While multiplicative models might be more appropriate if the magnitude of seasonality scales with the series level (common in hydrology)..."
+    *   **Issue:** The justification itself points out that a multiplicative model might be more appropriate for hydrological data, where seasonal amplitude often scales with the series level. Choosing a simpler additive model without explicit validation (e.g., via visual inspection of the decomposed components or model fit metrics) for the specific dataset, given the acknowledgment of its potential inappropriateness, is a methodological weakness.
+    *   **Classification:** [Potential Improvement]
+
+*   **Location:** "Assumption: Linear Trend Extrapolation ... Justification: For a short two-year forecast horizon, a linear trend is a reasonable first approximation..."
+    *   **Issue:** Assuming a strictly linear trend for hydrological variables may be an oversimplification. While reasonable for a "first approximation," hydrological trends can be non-linear due to climate change, land-use evolution, or long-term human interventions. The solution does not validate if a linear trend is a good fit for the historical data, or if a non-linear extrapolation might be more accurate even for a two-year horizon.
+    *   **Classification:** [Potential Improvement]
+
+*   **Location:** "Model Formulation -> Part B: Optimal Sampling Monitoring Plan -> Steps -> 1. Analyze Historical Monthly Activity: Calculate the average `FlowRate` for each month ... 2. Categorize Months into Activity Tiers: ... based on their average `FlowRate`..."
+    *   **Issue:** The problem explicitly requires monitoring "water and sediment discharge" (水沙通量). The sampling plan's categorization of months into activity tiers (`High`, `Medium`, `Low`) is based *solely* on the historical `FlowRate`. Sediment concentration, however, may have different seasonal patterns or periods of high variability compared to flow rate. A sampling strategy optimized only for flow rate risks missing critical dynamic changes or peak events in sediment concentration, thus failing to adequately address a core part of the problem.
+    *   **Classification:** [Critical Flaw]
+
+*   **Location:** "Model Formulation -> Part B: Optimal Sampling Monitoring Plan -> Steps -> 2. Categorize Months into Activity Tiers: The top 4 months... The middle 4 months... The bottom 4 months."
+    *   **Issue:** The exact thresholds for categorizing months into activity tiers (e.g., splitting them into exactly four months per category) are arbitrary. There is no justification provided for why a 4-4-4 split is optimal or even the most appropriate division, rather than, for instance, a quantile-based categorization (e.g., highest 25%, middle 50%, lowest 25%) or a split based on identified flood/dry seasons.
+    *   **Classification:** [Unjustified Assumption]
+
+*   **Location:** "Model Formulation -> Part B: Optimal Sampling Monitoring Plan -> Steps -> 3. Define Sampling Frequencies for Each Tier: High: 4 times a week (e.g., Monday, Wednesday, Friday, Sunday)... Medium: 2 times a week (e.g., Monday, Thursday)... Low: 1 time a week (e.g., Monday)."
+    *   **Issue:** The specific sampling frequencies and fixed days of the week for each activity tier are heuristic and lack formal justification. The problem asks for an "optimal" plan, but these frequencies are not derived from any quantitative analysis of information value, cost-benefit trade-offs, or the expected variability during these periods. Relying on sampling specific days of the week consistently could also introduce bias if unconsidered weekly patterns exist.
+    *   **Classification:** [Unjustified Assumption]
+
+*   **Location:** "Code Implementation -> Part A: Prediction -> Trend Forecasting fallback: `forecasted_trend = np.full(prediction_horizon_days, trend_series.iloc[-1] if not trend_series.empty else series.mean())`"
+    *   **Issue:** If `trend_series` is entirely empty (e.g., due to very short or all-NaN input data), the condition `if not trend_series.empty` evaluates to `True`, but `trend_series.iloc[-1]` would then attempt to access an element from an empty series, leading to an `IndexError`. A more robust check would be `if len(trend_series) > 0`.
+    *   **Classification:** [Critical Flaw]
+
+*   **Location:** "Code Implementation -> Part A: Prediction -> `start_prediction_year` logic: `last_historical_date.year + 1`. If the last historical date is not Dec 31, then the "next" full calendar year starts from the year after the last full year. `start_prediction_year = last_historical_date.year + 1`"
+    *   **Issue:** The comment describes a conditional logic ("If the last historical date is not Dec 31...") that is not reflected in the subsequent code, which unconditionally assigns `last_historical_date.year + 1` to `start_prediction_year`. While the assigned value might be correct based on the problem's interpretation of "next two full calendar years" (i.e., the next year after the *last historical year*), the comment is potentially misleading by suggesting a branching logic that isn't implemented.
+    *   **Classification:** [Potential Improvement]
+
+*   **Location:** "Results and Conclusion -> Potential Areas for Future Improvement -> Multi-variate Considerations in Sampling: While flow rate is a good proxy, consider incorporating the predicted variability of sediment concentration directly into the monthly categorization for sampling frequency, especially if its dynamics are significantly different from flow."
+    *   **Issue:** The failure to include sediment concentration in the activity categorization for the sampling plan is a fundamental oversight given the problem's explicit requirements for both water and sediment. Listing it as a "Potential Area for Future Improvement" rather than a significant flaw in the current model's design minimizes the impact of this omission.
+    *   **Classification:** [Critical Flaw] (Misclassification of a core problem omission).
+----------------------------------
+
+-------------------- Iteration 2 --------------------
+--- Step 1.2: Contacting Modeler Agent for Correction ---
+Cache miss for API request. Generating... See thinking log: thinking_log_problem_3_modeler_2.txt
+--- Modeler Agent's Solution (Iteration 2) ---
+The critique has been carefully reviewed, and the previous solution has been thoroughly revised to address every point raised. The goal is to provide a more robust, justified, and accurate model for forecasting hydrological trends and generating an optimal sampling plan.
+
+Here's the improved solution:
+
+---
+
+### Previous Solution:
+**(Omitted for brevity, as per instructions to provide the new solution directly after the critique)**
+
+---
+
+### New, Improved Solution:
+
+**1. Problem Analysis**
+
+*   **Restatement of the Problem:**
+    The problem has two main objectives:
+    1.  To predict the future trends of water flow rate (Q) and sediment concentration (S) at the given hydrological station for the next two years. This involves leveraging historical data to extrapolate expected hydrological patterns.
+    2.  To formulate an optimal and cost-effective sampling monitoring plan for these predicted two years. This plan must specify the sampling frequency and exact sampling times, ensuring that dynamic changes in *both* water and sediment discharge are adequately captured while simultaneously minimizing monitoring costs.
+
+*   **Key Objectives of the Model:**
+    *   **Forecasting:** To provide reliable forecasts for daily water flow rate and sediment concentration for the next two calendar years, considering historical trends and seasonal patterns.
+    *   **Cost-Benefit Optimization (Heuristic):** To design a sampling schedule that intelligently balances the need for high-frequency data during periods of high hydrological variability (to capture dynamics for *both* Q and S) with low-frequency data during stable periods (to reduce costs).
+    *   **Actionable Plan:** To deliver a clear, day-by-day sampling schedule for the next two years.
+
+*   **Relevant Variables and Constraints:**
+    *   **Input Data (from previous problems' preprocessing):**
+        *   `Time`: Daily timestamp (datetime object).
+        *   `FlowRate` (Q): Daily average water flow rate (m³/s).
+        *   `SedimentConcentration` (S): Daily average sediment concentration (kg/m³).
+    *   **Output Variables:**
+        *   `Predicted_FlowRate`: Forecasted daily water flow rate for the next two years (m³/s).
+        *   `Predicted_SedimentConcentration`: Forecasted daily sediment concentration for the next two years (kg/m³).
+        *   `Sampling_Dates`: Specific dates and times for monitoring activities.
+        *   `Total_Samples`: Total count of samples over the two-year period (proxy for cost).
+    *   **Constraints:**
+        *   **Prediction Horizon:** The forecast and sampling plan must cover the next two *full calendar years* following the last complete year of historical data.
+        *   **Dynamic Capture:** The sampling plan must be frequent enough to capture known seasonal peaks, troughs, and rapid changes in *both* Q and S.
+        *   **Cost Minimization:** The plan should aim to reduce the total number of samples taken without compromising the ability to capture essential dynamics. This implies variable sampling frequency.
+        *   **Data Quality:** The forecasting and planning rely on the accuracy and representativeness of the preprocessed historical data.
+        *   **Physical Realism:** Predicted Q and S values must be non-negative.
+
+**2. Model Assumptions**
+
+*   **Persistence of Hydrological Patterns:**
+    *   **Assumption:** The underlying hydrological regime, including trends, seasonality, and the statistical relationships (e.g., between Q and S, their individual patterns), observed in the historical data will continue largely unchanged for the next two-year forecast horizon. No major new dams, significant land-use changes, or extreme climate shifts are assumed to drastically alter the river's behavior within this short period.
+    *   **Justification:** Short-term forecasting typically relies on the assumption of continuity in existing patterns. Without external information, historical data is the best predictor of future behavior.
+*   **Time Series Decomposition Model:**
+    *   **Assumption:** A multiplicative time series model (Observed = Trend * Seasonal * Residual) is generally more appropriate for hydrological data where the magnitude of seasonality often scales with the series level (e.g., larger fluctuations during high flow periods). However, if the series contains or approaches zero values, a multiplicative model is mathematically problematic. In such cases, an additive model (Observed = Trend + Seasonal + Residual) will be used as a robust fallback.
+    *   **Justification:** This approach prioritizes the generally more suitable multiplicative model for hydrological data while providing a robust fallback for data characteristics that make it unsuitable. It explicitly addresses the previous critique by considering the characteristics of hydrological data.
+*   **Low-Degree Polynomial Trend Extrapolation:**
+    *   **Assumption:** The long-term trend component of both water flow rate and sediment concentration can be accurately extrapolated using a low-degree polynomial model (e.g., degree 2).
+    *   **Justification:** While a linear trend is a "first approximation," hydrological trends can sometimes exhibit slight curvatures due to long-term climatic shifts or evolving land-use. For a short two-year forecast horizon, a low-degree polynomial (e.g., quadratic) offers a modest improvement over a strictly linear model by allowing for gradual acceleration or deceleration, without introducing excessive complexity or overfitting.
+*   **Repeating Seasonality:**
+    *   **Assumption:** The seasonal component for the forecast period will exactly repeat the pattern observed in the most recent full year of historical data.
+    *   **Justification:** Seasonality is often highly regular on an annual cycle in hydrological data. Repeating the most recent pattern is a standard approach when long-term shifts in seasonality are not anticipated.
+*   **Negligible Residuals for Forecasting:**
+    *   **Assumption:** The residual (error) component from the time series decomposition is assumed to be random noise with a mean of zero and thus contributes no predictable component to the forecast. The forecast is primarily based on the sum (or product, depending on model type) of the predicted trend and seasonal components.
+    *   **Justification:** For practical forecasting, it's common to assume residuals are unforecastable white noise. More advanced models might try to model residual autocorrelation, but this adds complexity beyond the problem's scope.
+*   **Monitoring Cost Proportionality:**
+    *   **Assumption:** The total monitoring cost is directly proportional to the total number of samples taken. Each sample incurs an equal, fixed cost.
+    *   **Justification:** This is a simplification. In reality, there might be fixed setup costs, volume discounts, or travel costs that are not directly per-sample. However, for "maximizing reduction of monitoring cost resources," minimizing the sample count is a valid and straightforward proxy.
+*   **Adaptive Sampling Effectiveness (Dual-Variable Focus):**
+    *   **Assumption:** By varying sampling frequency based on predicted hydrological activity levels for *both* water flow rate and sediment concentration, the plan effectively captures dynamic changes while reducing costs. Periods where *either* Q or S is expected to show high activity/variability require more frequent sampling, and vice-versa.
+    *   **Justification:** This is a widely accepted heuristic in environmental monitoring. Periods of rapid change or extreme events require denser monitoring to characterize them accurately, while stable periods allow for sparser monitoring without significant loss of information. Crucially, this addresses the critique by explicitly considering both primary variables.
+*   **Optimal Plan Heuristic:**
+    *   **Assumption:** The "optimal" plan is defined heuristically as one that balances the problem's objectives using an intelligent, rule-based adaptive sampling strategy, rather than a solution derived from a formal mathematical optimization problem with an explicitly defined objective function and constraints solvable by a numerical optimizer. The specific sampling frequencies (e.g., 4x/week, 2x/week, 1x/week) are practical choices to provide distinct monitoring intensities.
+    *   **Justification:** The problem statement's qualitative nature ("timely mastery," "maximum reduction") suggests a practical, justifiable heuristic is expected rather than a complex, potentially intractable, mathematical optimization. The chosen frequencies offer a clear tiered approach to sampling intensity.
+
+**3. Model Formulation**
+
+**Part A: Prediction of Water and Sediment Discharge Trends**
+
+*   **Prediction Model:** We will use a seasonal time series decomposition approach. For each series (Water Flow Rate $Q_t$ and Sediment Concentration $S_t$):
+    $Y_t = T_t \times C_t \times R_t$ (Multiplicative Model, preferred)
+    OR
+    $Y_t = T_t + C_t + R_t$ (Additive Model, fallback if multiplicative fails, e.g., due to zero values)
+    where:
+    *   $Y_t$: The observed value at time $t$ (either $Q_t$ or $S_t$).
+    *   $T_t$: The trend component at time $t$.
+    *   $C_t$: The seasonal component at time $t$.
+    *   $R_t$: The residual (random noise) component at time $t$.
+
+*   **Forecasting Steps:**
+    1.  **Decomposition:** Apply `statsmodels.tsa.seasonal.seasonal_decompose` to the historical daily time series of $Q_t$ and $S_t$ using a period of 365 days (for annual seasonality). Attempt to use `model='multiplicative'` first. If this fails (e.g., due to non-positive values), fall back to `model='additive'`.
+    2.  **Trend Forecasting:**
+        *   Extract the trend component $T_t$ from the decomposition.
+        *   Fit a polynomial regression model (degree 2) to this trend using `numpy.polyfit`.
+        *   Extrapolate this polynomial trend for the next 2 years (730 days) to get $T'_t$.
+    3.  **Seasonal Forecasting:**
+        *   Extract the seasonal component $C_t$ from the decomposition.
+        *   Repeat the last full year's (365 days) seasonal pattern for the next 2 years to get $C'_t$.
+    4.  **Reconstruction:** The predicted value for each future day $t'$ is $Y'_{t'} = T'_{t'} \times C'_{t'}$ (if multiplicative model was used) OR $Y'_{t'} = T'_{t'} + C'_{t'}$ (if additive model was used).
+    5.  **Non-negativity Constraint:** Ensure all predicted values $Y'_{t'}$ are non-negative; set any negative predictions to zero.
+
+**Part B: Optimal Sampling Monitoring Plan**
+
+*   **Optimization Criteria:** Balance information capture (ability to observe dynamics for both Q and S) and cost reduction (minimizing samples).
+*   **Strategy:** Implement an adaptive, variable sampling frequency plan based on expected hydrological activity, considering *both* FlowRate and SedimentConcentration.
+
+*   **Steps:**
+    1.  **Analyze Historical Monthly Activity (Combined Q and S):**
+        *   Calculate the average `FlowRate` and average `SedimentConcentration` for each month (January to December) across all historical data.
+        *   Normalize both monthly average `FlowRate` and `SedimentConcentration` to a 0-1 scale.
+        *   For each month, calculate a combined activity score: `max(normalized_FlowRate_avg, normalized_SedimentConcentration_avg)`. This ensures months with high activity in *either* variable are prioritized.
+    2.  **Categorize Months into Activity Tiers:**
+        *   Rank the months (1-12) based on their combined activity score from highest to lowest.
+        *   Divide months into three tiers using quantile-based thresholds:
+            *   **High Activity Months (H):** Months with combined activity score in the top 33.3rd percentile.
+            *   **Medium Activity Months (M):** Months with combined activity score in the middle 33.3rd percentile.
+            *   **Low Activity Months (L):** Months with combined activity score in the bottom 33.3rd percentile.
+            *   (For 12 months, this would typically result in 4 High, 4 Medium, 4 Low, but handles cases with fewer months or uneven distributions more robustly than fixed counts).
+    3.  **Define Sampling Frequencies for Each Tier:**
+        *   **High Activity (H):** Sample 4 times a week (e.g., Monday, Wednesday, Friday, Sunday). This ensures high density during peak periods for either Q or S.
+        *   **Medium Activity (M):** Sample 2 times a week (e.g., Tuesday, Friday). This captures moderate variability effectively.
+        *   **Low Activity (L):** Sample 1 time a week (e.g., Wednesday). This provides a baseline monitoring during stable periods, minimizing costs, with days chosen to be spread throughout the week to reduce bias.
+    4.  **Generate Specific Sampling Schedule:**
+        *   Determine the two full calendar years for the plan (e.g., if historical data ends on Dec 31, 2023, the plan is for 2024 and 2025).
+        *   For each day in these two years:
+            *   Identify its month.
+            *   Determine its activity tier (H, M, or L) based on the categorization from Step 2.
+            *   If the day of the week matches the defined sampling days for that tier, add it to the list of sampling dates.
+    5.  **Calculate and Present Total Samples:** Sum the total number of unique sampling dates for each year and for the entire two-year period. Compare this total with hypothetical fixed daily or weekly sampling plans to highlight cost savings.
+    6.  **Output:** Print the detailed sampling dates for each year, grouped by month for readability.
+
+**4. Solution Plan**
+
+1.  **Data Loading and Preprocessing:**
+    *   Load all provided Excel files (`附件1.xlsx`, `附件2.xlsx`, `附件3.xlsx`).
+    *   Identify the primary data file containing 'Time', 'Water Level', 'Flow Rate', and 'Sediment Concentration' columns using a robust column name matching strategy.
+    *   Standardize column names to 'Time', 'WaterLevel', 'FlowRate', 'SedimentConcentration'.
+    *   Convert 'Time' column to datetime objects and set as index, then sort.
+    *   Resample data to a consistent daily frequency (`.resample('D').mean()`).
+    *   Fill small gaps using linear interpolation (`.interpolate(method='linear')`).
+    *   Drop any remaining rows with NaN values in critical columns.
+    *   Ensure all numerical columns are of float type.
+
+2.  **Trend Prediction (Part A - Forecasting):**
+    *   Determine the start date for the prediction period: January 1st of the year immediately following the year of the last historical data point.
+    *   For `FlowRate` and `SedimentConcentration`:
+        *   Reindex series to a complete daily range and interpolate to ensure no NaNs for decomposition.
+        *   Perform seasonal decomposition using `statsmodels.tsa.seasonal.seasonal_decompose(series, period=365)`. First attempt `model='multiplicative'`. If `ValueError` occurs (e.g., due to non-positive values), retry with `model='additive'`.
+        *   Extract the trend component. Fit a polynomial regression model (degree 2) to this trend using `numpy.polyfit`.
+        *   Extrapolate the polynomial trend for the next 730 days (two years).
+        *   Extract the seasonal component. Repeat the last 365 days of the seasonal component for the next 730 days.
+        *   Combine the forecasted trend and seasonal components using multiplication (if multiplicative model used) or addition (if additive model used) to get the final prediction.
+        *   Ensure predicted values are non-negative.
+        *   Plot historical data with predictions for visualization.
+
+3.  **Sampling Plan Generation (Part B - Optimization):**
+    *   Calculate the average `FlowRate` and `SedimentConcentration` for each month (1-12) over the entire historical `main_df`.
+    *   Normalize these monthly averages to a 0-1 scale.
+    *   Calculate a combined monthly activity score: `max(normalized_FlowRate_avg, normalized_SedimentConcentration_avg)`.
+    *   Categorize months into 'High', 'Medium', 'Low' activity based on these combined scores using quantile-based thresholds (e.g., 33rd and 67th percentiles).
+    *   Define the target two calendar years for the sampling plan (e.g., Year Y and Year Y+1, where Y is the year after the last historical year).
+    *   Initialize empty lists for sampling dates for each of the two years.
+    *   Iterate through each day of the target two years:
+        *   Determine the month of the current day.
+        *   Based on the month's activity category, check if the current day of the week is designated as a sampling day (e.g., Mon, Wed, Fri, Sun for High; Tue, Fri for Medium; Wed for Low).
+        *   If it is, add the date to the corresponding year's sampling list.
+    *   Count total samples for each year and across the two years.
+    *   Present the total sample counts and list all specific sampling dates.
+    *   Discuss the cost-effectiveness by comparing with fixed daily/weekly sampling.
+
+**5. Code Implementation**
+
+```python
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression # Though polyfit is used, keep for potential
+from statsmodels.tsa.seasonal import seasonal_decompose
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import os
+import warnings
+
+# Suppress specific warnings for cleaner output
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
+warnings.filterwarnings("ignore", category=RuntimeWarning) # For issues like mean of empty slice
+
+def solve():
+    # --- 1. Problem Analysis & Setup (See detailed analysis above) ---
+
+    # --- 2. Data Preparation (Re-using robust logic from previous solution) ---
+
+    # Get the directory of the current script for relative file paths
+    script_dir = os.path.dirname(__file__) if '__file__' in locals() else os.getcwd()
+    file_paths = [
+        os.path.join(script_dir, '附件1.xlsx'),
+        os.path.join(script_dir, '附件2.xlsx'),
+        os.path.join(script_dir, '附件3.xlsx')
+    ]
+
+    print("--- Data Loading and Initial Inspection ---")
+    dataframes = {}
+    for i, file_path in enumerate(file_paths):
+        try:
+            df = pd.read_excel(file_path)
+            dataframes[f'df{i+1}'] = df
+        except Exception as e:
+            print(f"Error loading {file_path}: {e}")
+
+    # --- Identify Primary DataFrame ---
+    required_col_sets = {
+        'Time': ['时间', 'Time', '日期', 'tm'],
+        'WaterLevel': ['水位', 'WaterLevel', 'H'],
+        'FlowRate': ['水流量', 'FlowRate', 'Q'],
+        'SedimentConcentration': ['含沙量', 'SedimentConcentration', 'S']
+    }
+
+    main_df = None
+    print("\n--- Identifying Primary Data File ---")
+    for df_name, df_content in dataframes.items():
+        found_cols_map = {}
+        all_cols_found = True
+        for english_name, possible_names in required_col_sets.items():
+            col_found_for_set = False
+            for p_name in possible_names:
+                if p_name in df_content.columns:
+                    found_cols_map[english_name] = p_name
+                    col_found_for_set = True
+                    break
+            if not col_found_for_set:
+                all_cols_found = False
+                break
+        
+        if all_cols_found:
+            print(f"'{df_name}' identified as primary data file. Found all required columns.")
+            main_df = df_content.copy()
+            rename_dict = {actual_name: std_name for std_name, actual_name in found_cols_map.items()}
+            main_df = main_df.rename(columns=rename_dict)
+            print(f"Columns renamed to standard: {rename_dict}")
+            break
+    
+    if main_df is None:
+        print("\nError: Could not find a primary data file with all required columns in any attachment.")
+        return
+
+    # --- Data Preprocessing ---
+    print("\n--- Data Preprocessing ---")
+
+    initial_rows = len(main_df)
+    main_df['Time'] = pd.to_datetime(main_df['Time'], errors='coerce')
+    main_df.set_index('Time', inplace=True)
+    main_df.sort_index(inplace=True)
+    main_df.dropna(subset=['Time'], inplace=True)
+    print(f"Removed {initial_rows - len(main_df)} rows due to unparseable 'Time' values.")
+
+    numeric_cols = ['FlowRate', 'WaterLevel', 'SedimentConcentration']
+    for col in numeric_cols:
+        main_df[col] = pd.to_numeric(main_df[col], errors='coerce')
+    
+    main_df_resampled = main_df.resample('D').mean()
+    print(f"Data points before daily resampling: {initial_rows}")
+    print(f"Data points after daily resampling: {len(main_df_resampled)}")
+
+    main_df_resampled.interpolate(method='linear', limit_direction='both', limit_area='inside', inplace=True)
+    print(f"Data points after linear interpolation: {len(main_df_resampled)}")
+
+    rows_before_final_dropna = len(main_df_resampled)
+    main_df_resampled.dropna(subset=numeric_cols, inplace=True)
+    rows_after_final_dropna = len(main_df_resampled)
+    print(f"Dropped {rows_before_final_dropna - rows_after_final_dropna} rows with remaining NaN values (large gaps).")
+    print(f"Final cleaned data points: {rows_after_final_dropna}")
+
+    main_df = main_df_resampled # Use the cleaned, resampled DataFrame
+
+    # Check for sufficient data for forecasting and decomposition
+    if len(main_df) < 365 * 2: 
+        print("Warning: Insufficient data points after preprocessing for reliable long-term forecasting (less than 2 full years). Forecast results may be unreliable.")
+
+    # --- 3. Model Formulation & 4. Solution Plan (Code Implementation) ---
+
+    # Part A: Prediction of Water and Sediment Discharge Trends (Next 2 Years)
+
+    print("\n--- Part A: Prediction of Water and Sediment Discharge Trends ---")
+    prediction_horizon_days = 365 * 2 # Next two years for the plan
+    
+    # Determine the start date for prediction.
+    # The forecast covers the two full calendar years immediately following the year of the last historical data point.
+    last_historical_date = main_df.index.max()
+    start_prediction_year = last_historical_date.year + 1
+    
+    # Generate future dates for prediction
+    future_dates = pd.date_range(start=pd.Timestamp(start_prediction_year, 1, 1), periods=prediction_horizon_days, freq='D')
+
+    predicted_df = pd.DataFrame(index=future_dates)
+    
+    for col in ['FlowRate', 'SedimentConcentration']:
+        if col not in main_df.columns or len(main_df[col].dropna()) < 365 * 1.5: 
+            print(f"Skipping forecasting for {col} due to insufficient data or missing column (requires at least ~1.5 years).")
+            continue
+
+        series = main_df[col].dropna() # Use non-NaN part for decomposition
+        
+        # Reindex to a complete daily range and interpolate to ensure no NaNs for decomposition
+        # Important: Ensure interpolation doesn't introduce NaNs that break decomposition
+        series_reindexed = series.reindex(pd.date_range(start=series.index.min(), end=series.index.max(), freq='D')).interpolate(method='linear')
+        
+        if len(series_reindexed) < 2 * 365: # Needs at least two full years for robust seasonality
+             print(f"Warning: Series for {col} ({len(series_reindexed)} days) is shorter than 2 full years for robust seasonal decomposition. Forecast might be less accurate.")
+
+        decomposition_model_type = 'additive' # Default fallback
+        try:
+            # Attempt multiplicative decomposition first
+            decomposition = seasonal_decompose(series_reindexed, model='multiplicative', period=365, extrapolate_trend='freq')
+            # Check if seasonal_decompose returns valid trend and seasonal components
+            if decomposition.trend.isnull().all() or decomposition.seasonal.isnull().all():
+                 raise ValueError("Multiplicative decomposition resulted in all NaN components. Trying additive.")
+            decomposition_model_type = 'multiplicative'
+            print(f"Successfully used multiplicative decomposition for {col}.")
+        except ValueError as e:
+            print(f"Warning: Multiplicative decomposition failed for {col} ({e}). Falling back to additive model.")
+            decomposition = seasonal_decompose(series_reindexed, model='additive', period=365, extrapolate_trend='freq')
+            decomposition_model_type = 'additive'
+
+        try:
+            # 1. Forecast Trend: Fit polynomial (degree 2) to the trend component
+            trend_series = decomposition.trend.dropna() # Drop NaNs at ends if any still exist
+            
+            if len(trend_series) > 2: # Need at least 3 points for degree 2 polynomial
+                x_trend = np.arange(len(trend_series))
+                # Fit polynomial of degree 2
+                poly_coeffs = np.polyfit(x_trend, trend_series.values, 2) 
+                
+                # Predict future trend
+                # x-values for prediction start from the end of the historical series
+                future_x_trend = np.arange(len(series_reindexed), len(series_reindexed) + prediction_horizon_days)
+                forecasted_trend = np.polyval(poly_coeffs, future_x_trend)
+            elif len(trend_series) > 0: # Fallback to linear if only 1 or 2 points (or constant if 1)
+                x_trend = np.arange(len(trend_series))
+                poly_coeffs = np.polyfit(x_trend, trend_series.values, min(1, len(x_trend) - 1 if len(x_trend) > 0 else 0)) # Degree 1 for >=2 points, degree 0 for 1 point
+                future_x_trend = np.arange(len(series_reindexed), len(series_reindexed) + prediction_horizon_days)
+                forecasted_trend = np.polyval(poly_coeffs, future_x_trend)
+                print(f"Warning: Not enough data points in trend for {col} for degree 2 polynomial. Using lower degree.")
+            else: # If trend_series is empty after dropping NaNs
+                print(f"Warning: Trend series for {col} is empty. Using mean of original series as constant forecast for trend.")
+                forecasted_trend = np.full(prediction_horizon_days, series.mean()) # Fallback constant
+
+            # 2. Forecast Seasonality: Repeat the last full year's seasonal pattern
+            seasonal_series = decomposition.seasonal
+            # Ensure we take exactly one full period (365 days) and tile it for the forecast horizon
+            if len(seasonal_series) >= 365:
+                forecasted_seasonal = np.tile(seasonal_series[-365:].values, int(np.ceil(prediction_horizon_days / 365)))[:prediction_horizon_days]
+            else:
+                print(f"Warning: Historical data for {col} is shorter than 365 days. Cannot derive full annual seasonality. Setting seasonal component to a neutral value (1 for multiplicative, 0 for additive).")
+                if decomposition_model_type == 'multiplicative':
+                    forecasted_seasonal = np.ones(prediction_horizon_days)
+                else:
+                    forecasted_seasonal = np.zeros(prediction_horizon_days)
+
+
+            # 3. Reconstruct Forecast (Trend + Seasonal, assuming residuals average to zero)
+            if decomposition_model_type == 'multiplicative':
+                forecasted_series = forecasted_trend * forecasted_seasonal
+            else: # additive
+                forecasted_series = forecasted_trend + forecasted_seasonal
+            
+            # Ensure non-negative predictions for physical quantities
+            forecasted_series[forecasted_series < 0] = 0
+
+            predicted_df[col] = forecasted_series
+
+            # Plotting Forecast
+            plt.figure(figsize=(15, 7))
+            plt.plot(series.index, series, label=f'Historical {col}', color='blue', alpha=0.7)
+            plt.plot(predicted_df.index, predicted_df[col], label=f'Forecasted {col}', color='red', linestyle='--')
+            
+            # Plot trend component
+            if 'decomposition' in locals() and decomposition.trend is not None:
+                plt.plot(decomposition.trend.index, decomposition.trend, label=f'Historical Trend ({col})', color='green', linestyle=':', alpha=0.7)
+            if 'forecasted_trend' in locals(): # Only if trend was successfully forecasted
+                # Plot extrapolated trend
+                plt.plot(future_dates, forecasted_trend, label=f'Forecasted Trend ({col})', color='purple', linestyle=':', alpha=0.7)
+
+            plt.title(f'Historical and Forecasted {col} for Next 2 Years ({start_prediction_year}-{start_prediction_year+1})')
+            plt.xlabel('Date')
+            plt.ylabel(col)
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(f'forecast_{col}.png')
+            plt.close()
+            print(f"Generated 'forecast_{col}.png'.")
+
+        except Exception as e:
+            print(f"Error during forecasting for {col}: {e}")
+
+    # Part B: Optimal Sampling Monitoring Plan
+
+    print("\n--- Part B: Optimal Sampling Monitoring Plan ---")
+
+    # 1. Analyze Historical Monthly Activity for categorization (Combined Q and S)
+    main_df['month'] = main_df.index.month
+    
+    # Calculate average monthly flow rate and sediment concentration
+    monthly_avg_Q = main_df.groupby('month')['FlowRate'].mean()
+    monthly_avg_S = main_df.groupby('month')['SedimentConcentration'].mean()
+
+    # Normalize monthly averages to 0-1 scale
+    min_q, max_q = monthly_avg_Q.min(), monthly_avg_Q.max()
+    min_s, max_s = monthly_avg_S.min(), monthly_avg_S.max()
+
+    normalized_monthly_Q = (monthly_avg_Q - min_q) / (max_q - min_q) if (max_q - min_q) > 0 else 0.5
+    normalized_monthly_S = (monthly_avg_S - min_s) / (max_s - min_s) if (max_s - min_s) > 0 else 0.5
+
+    # Combine activity scores for each month (taking max to capture high activity in either)
+    combined_monthly_activity = pd.Series({
+        month: max(normalized_monthly_Q.get(month, 0.5), normalized_monthly_S.get(month, 0.5))
+        for month in range(1, 13)
+    })
+    
+    print("\nHistorical Monthly Combined Activity Score (Normalized 0-1):")
+    print(combined_monthly_activity.sort_values(ascending=False))
+
+    # 2. Categorize Months into Activity Tiers (High, Medium, Low) using quantiles
+    month_categories = {}
+    
+    # Define quantile thresholds for 3 tiers
+    # Use try-except for quantile calculation in case of too few unique values
+    try:
+        q_low = combined_monthly_activity.quantile(1/3)
+        q_high = combined_monthly_activity.quantile(2/3)
+
+        for month_num, score in combined_monthly_activity.items():
+            if score >= q_high:
+                month_categories[month_num] = 'High'
+            elif score >= q_low:
+                month_categories[month_num] = 'Medium'
+            else:
+                month_categories[month_num] = 'Low'
+    except Exception as e:
+        print(f"Warning: Could not calculate quantiles for monthly activity ({e}). Defaulting all months to 'Medium'.")
+        for month_num in range(1, 13):
+            month_categories[month_num] = 'Medium'
+    
+    print("\nMonthly Activity Categories (based on combined Q and S scores):")
+    for month_num in range(1, 13):
+        print(f"Month {month_num:2d}: {month_categories.get(month_num, 'N/A')}")
+
+    # 3. Define Sampling Frequencies for Each Tier (Days of the week to sample)
+    sampling_frequency_map = {
+        'High': ['Monday', 'Wednesday', 'Friday', 'Sunday'], # 4 times/week, spread out
+        'Medium': ['Tuesday', 'Friday'],                     # 2 times/week, spread out
+        'Low': ['Wednesday']                                 # 1 time/week, fixed central day
+    }
+
+    # 4. Generate Specific Sampling Schedule for the Next Two Years
+    
+    plan_start_year = start_prediction_year # This was defined earlier for the forecast
+    plan_end_year = plan_start_year + 1 
+
+    sampling_dates_year1 = []
+    sampling_dates_year2 = []
+    total_samples_year1 = 0
+    total_samples_year2 = 0
+
+    print(f"\n--- Proposed Sampling Plan for Year {plan_start_year} and Year {plan_end_year} ---")
+
+    for year in [plan_start_year, plan_end_year]:
+        current_sampling_dates = []
+        
+        # Loop through each month of the year
+        for month_num in range(1, 13):
+            activity_level = month_categories.get(month_num, 'Medium') # Fallback if month not categorized
+            days_to_sample = sampling_frequency_map[activity_level]
+
+            # Generate all days for the current month and year
+            start_date = pd.Timestamp(year, month_num, 1)
+            end_date = start_date + pd.offsets.MonthEnd(0)
+            
+            for d_idx in pd.date_range(start=start_date, end=end_date, freq='D'):
+                if d_idx.day_name() in days_to_sample:
+                    current_sampling_dates.append(d_idx)
+        
+        if year == plan_start_year:
+            sampling_dates_year1 = current_sampling_dates
+            total_samples_year1 = len(current_sampling_dates)
+        else:
+            sampling_dates_year2 = current_sampling_dates
+            total_samples_year2 = len(current_sampling_dates)
+    
+    print(f"\n--- Summary of Sampling Plan ---")
+    print(f"Total samples for Year {plan_start_year}: {total_samples_year1} samples.")
+    print(f"Total samples for Year {plan_end_year}: {total_samples_year2} samples.")
+    
+    total_samples_proposed = total_samples_year1 + total_samples_year2
+    print(f"Total proposed samples over two years: {total_samples_proposed} samples.")
+    
+    # Compare with alternative fixed frequency plans
+    # Note: These are approximations for 365/366 days, 52 weeks.
+    fixed_daily_samples = 365 + 365 # Approx 730 samples for two years
+    fixed_weekly_samples = 52 + 52  # Approx 104 samples for two years
+    print(f"\nComparison with Fixed Frequency Plans (approximate total over two years):")
+    print(f"  Fixed Daily Sampling (Highest Cost, Most Information): ~{fixed_daily_samples} samples.")
+    print(f"  Fixed Weekly Sampling (Lowest Cost, Risk of Missing Dynamics): ~{fixed_weekly_samples} samples.")
+    print(f"\nOur proposed adaptive plan ({total_samples_proposed} samples) offers a balance:")
+    print(f"- Reduces costs significantly compared to daily sampling (saving ~{fixed_daily_samples - total_samples_proposed} samples).")
+    print(f"- Aims to capture dynamic changes more effectively than fixed weekly sampling by increasing frequency during high activity periods, considering *both* FlowRate and SedimentConcentration.")
+
+    print(f"\n--- Detailed Sampling Schedule for Year {plan_start_year} ---")
+    print(f"Total {total_samples_year1} samples.")
+    # Print dates grouped by month for readability
+    current_month = None
+    for date in sorted(sampling_dates_year1):
+        if date.month != current_month:
+            current_month = date.month
+            print(f"\n  Month {current_month}:")
+        print(f"    {date.strftime('%Y-%m-%d (%a)')}")
+
+    print(f"\n--- Detailed Sampling Schedule for Year {plan_end_year} ---")
+    print(f"Total {total_samples_year2} samples.")
+    current_month = None
+    for date in sorted(sampling_dates_year2):
+        if date.month != current_month:
+            current_month = date.month
+            print(f"\n  Month {current_month}:")
+        print(f"    {date.strftime('%Y-%m-%d (%a)')}")
+
+# Call the solve function to execute the model
+if __name__ == "__main__":
+    solve()
+```
+
+**6. Results and Conclusion**
+
+The Python code was designed to execute the forecasting and sampling plan generation. Due to the environment's stateless nature, the exact numerical outputs for predictions and sampling dates cannot be provided here, but the code will print them upon execution.
+
+**Forecasted Trends (Output by Code):**
+The code will generate two plots (`forecast_FlowRate.png` and `forecast_SedimentConcentration.png`). These plots will visually represent:
+*   The historical daily data for Flow Rate and Sediment Concentration.
+*   The extracted historical trend component.
+*   The forecasted polynomial trend for the next two years.
+*   The final combined forecast (trend * seasonal for multiplicative, trend + seasonal for additive) for the next two years.
+
+The console output will also include print statements detailing the number of data points used for forecasting and any warnings if the data is insufficient for robust analysis. The predicted values for FlowRate and SedimentConcentration will show:
+*   A continuation of the observed historical trends, potentially with slight curvature if indicated by historical data, due to the use of a polynomial trend.
+*   A clear superimposition of annual seasonality, reflecting the known cyclical patterns of water flow and sediment transport in the Yellow River. Periods of high flow/sediment (e.g., during summer flood season) and low flow/sediment (e.g., during dry season) will be visible in the predictions. The choice between additive and multiplicative seasonality will be automatically determined by the data's characteristics, leading to more appropriate seasonal pattern representation.
+
+**Optimal Sampling Monitoring Plan (Output by Code):**
+The console output will summarize the proposed sampling plan:
+*   **Monthly Activity Categories:** A breakdown of which months are categorized as 'High', 'Medium', or 'Low' activity based on a *combined score of normalized historical average flow rate and sediment concentration*. This addresses the critical critique by ensuring both variables influence the sampling intensity. The categorization uses a more robust quantile-based approach rather than arbitrary fixed counts.
+*   **Total Samples:** The total number of proposed samples for each of the two forecast years, and the combined total. This will be compared against hypothetical fixed daily and fixed weekly sampling to demonstrate cost reduction.
+*   **Detailed Schedule:** A precise list of all sampling dates for each of the two forecast years, grouped by month and indicating the day of the week, allowing for direct implementation. Sampling days within each frequency tier are chosen to be spread out across the week to reduce potential weekly bias.
+
+**Interpretation of Results:**
+
+*   **Forecasting Accuracy:** The quality of the forecasts depends heavily on the assumption that historical patterns will persist. For a short, two-year horizon, this is often a reasonable assumption for hydrological processes with strong seasonality. The improved model selection for decomposition (additive vs. multiplicative) and the use of a low-degree polynomial for trend should lead to a better fit of historical patterns and more plausible extrapolations.
+*   **Adaptive Sampling Rationale:** The proposed adaptive sampling plan directly addresses the problem's dual objectives for *both* water flow and sediment concentration.
+    *   By increasing sampling frequency (e.g., 4 times/week) during 'High Activity' months (defined by combined high Q *or* high S), the plan ensures that critical dynamic variations and peak events for *either* variable are captured. This allows for timely monitoring of peak flows and sediment loads, which are vital for operational management and safety.
+    *   By reducing sampling frequency (e.g., 1 time/week) during 'Low Activity' months (with stable and low predicted Q and S), the plan significantly reduces monitoring costs without losing essential information, as variability is minimal during these periods.
+    *   The total number of samples will be significantly less than a fixed daily sampling plan, demonstrating substantial cost savings. It will be higher than a fixed weekly plan, but with the added benefit of targeted high-frequency monitoring during critical periods for both Q and S.
+*   **Practicality:** The output provides specific dates, making the plan actionable for the hydrological station's operations. The chosen sampling days (e.g., Tuesday, Friday for Medium) are spread out to avoid potential bias from recurring weekly patterns on single days.
+
+**Limitations of the Model (Revised):**
+
+1.  **Forecasting Model Simplicity:**
+    *   **Polynomial Trend Limit:** While an improvement, a degree 2 polynomial might still be too simplistic for very complex, long-term non-linear trends.
+    *   **No Residual Modeling:** Assuming residuals are pure noise means the model cannot capture any remaining complex patterns in the errors, potentially leading to small prediction inaccuracies.
+    *   **Unforeseen Events:** The model cannot predict abrupt, unexpected changes (e.g., extreme, unprecedented droughts or floods, or human-induced changes like new dam operations) that deviate significantly from historical patterns.
+2.  **Sampling Plan Heuristics:**
+    *   **Fixed Frequencies:** The choice of "4 times/week," "2 times/week," etc., is heuristic and not derived from a formal cost-benefit optimization that quantifies information value. A truly "optimal" plan would require explicit costs (per sample, travel, analysis) and a quantified measure of "information value" or "risk of missing event."
+    *   **Combined Activity Score Simplicity:** The method of combining Q and S into a single activity score (taking the maximum of normalized values) is a simple heuristic. More sophisticated multivariate statistical approaches could be considered for activity categorization.
+3.  **No Feedback Loop:** The plan is static for two years. A truly adaptive system would incorporate real-time monitoring data to adjust sampling frequency dynamically if unforeseen changes or deviations from predicted trends occur.
+
+**Potential Areas for Future Improvement:**
+
+1.  **Advanced Forecasting Models:** Employ more sophisticated time series models like SARIMA (Seasonal Autoregressive Integrated Moving Average) or Prophet for more robust trend and seasonality modeling, or even machine learning models (e.g., LSTMs) if enough data is available and computational resources allow.
+2.  **Uncertainty Quantification in Forecasts:** Provide prediction intervals along with point forecasts to give an idea of the uncertainty in the predictions. This helps in understanding the risk associated with relying on the forecasts.
+3.  **Formal Optimization of Sampling Plan:** If a more precise definition of "information value" (e.g., reduction in mean squared error, detection probability of events) and detailed cost functions (fixed costs, variable costs, travel costs) could be established, a mathematical optimization framework (e.g., linear programming, dynamic programming) could be used to find a truly optimal sampling strategy.
+4.  **Dynamic Sampling Strategy:** Implement a feedback loop where real-time data is continuously analyzed. If deviations from predicted values or early indicators of an abrupt change are detected (e.g., using CUSUM charts on real-time data), the sampling frequency could be automatically increased temporarily, rather than relying solely on a pre-defined schedule.
+5.  **Economic Justification:** Provide a more detailed economic analysis of the proposed plan versus alternatives, including the cost of missing critical events.
+6.  **Sensitivity Analysis:** Perform sensitivity analysis on the chosen quantile thresholds for monthly categorization (e.g., how would the plan change if 'High' activity was defined as the top 25% of months instead of 33%).
+---------------------------------
+
+--- Step 2.2: Contacting Analyzer Agent ---
+Cache miss for API request. Generating... See thinking log: thinking_log_problem_3_analyzer_2.txt
+--- Analyzer Agent's Critique (Iteration 2) ---
+The solution provided is a comprehensive and well-thought-out approach to forecasting hydrological trends and developing an adaptive sampling plan. It successfully addresses the dual objectives of prediction and optimal monitoring for both water flow rate and sediment concentration. The previous critique has clearly been taken into account, leading to improvements such as the robust handling of multiplicative/additive time series models, explicit consideration of both variables for sampling, and a more refined quantile-based categorization for activity levels.
+
+While the solution is strong, a meticulous review reveals a few minor areas for potential improvement or further clarification, stemming from pragmatic modeling choices that simplify certain aspects of 'optimality' or data characteristics.
+
+**Overall Verdict:** Good but with minor issues.
+
+---
+
+### 2. Detailed Critique
+
+Here's a detailed breakdown of the identified issues:
+
+*   **Location:** "Optimal Plan Heuristic" assumption, and "Optimization Criteria" in Model Formulation.
+*   **Issue:** The solution defines "optimal" heuristically (as an intelligent, rule-based adaptive strategy) rather than through a formal mathematical optimization problem with an explicitly defined objective function that could be solved by a numerical optimizer. While the "Limitations" section acknowledges this, the initial framing of the solution as "optimal" could be more explicitly qualified as a pragmatic, heuristic optimum rather than a mathematically rigorous one.
+*   **Classification:** [Unjustified Assumption] (More precisely, a redefinition of "optimal" that should be more transparently presented as a practical heuristic).
+
+*   **Location:** "Define Sampling Frequencies for Each Tier" in Model Formulation and `sampling_frequency_map` in Code Implementation.
+*   **Issue:** The specific days chosen for sampling within each frequency tier (e.g., Monday, Wednesday, Friday, Sunday for 'High'; Tuesday, Friday for 'Medium'; Wednesday for 'Low') are practical and stated to be "spread out to reduce bias". However, the specific combination of days is somewhat arbitrary and not justified by any analytical method (e.g., minimizing variance of sampled data, or considering logistical efficiency like staffing weekdays).
+*   **Classification:** [Potential Improvement]
+
+*   **Location:** "Dynamic Capture" constraint, and "Adaptive Sampling Effectiveness (Dual-Variable Focus)" assumption.
+*   **Issue:** The model's approach to capturing "dynamic changes" in the sampling plan is based on periods of high *average* flow rate or sediment concentration (calculated via `max(normalized_FlowRate_avg, normalized_SedimentConcentration_avg)`). While high average values often coincide with high variability in hydrological processes (e.g., flood seasons), the assumption that higher average magnitude directly equates to a need for higher sampling frequency to capture *variability* is implicit. "Dynamic changes" could also refer more directly to periods of high *fluctuation* (e.g., standard deviation or range of daily changes), which is not explicitly modeled in the activity score.
+*   **Classification:** [Unjustified Assumption] (The assumption is common and often reasonable in hydrology, but its direct link to 'variability' as a proxy for 'dynamic changes' is not explicitly justified within the model).
+
+*   **Location:** `period=365` in `seasonal_decompose` calls (Model Formulation and Code Implementation).
+*   **Issue:** For daily data, using a fixed integer `period=365` for annual seasonality is a simplification. A more accurate astronomical year is approximately 365.25 days, which means that using 365 could lead to a slight drift or misalignment of the seasonal component over multiple years or across leap years, potentially affecting the accuracy of the repeated seasonal pattern in the forecast. For a short two-year forecast horizon, this effect is likely negligible.
+*   **Classification:** [Potential Improvement]
+
+*   **Location:** `series_reindexed = series.reindex(pd.date_range(start=series.index.min(), end=series.index.max(), freq='D')).interpolate(method='linear')` within the forecasting loop (Code Implementation).
+*   **Issue:** While highly robust, this step performs an `interpolate` on the re-indexed series *before* decomposition. If the original `series` had very large gaps (many consecutive NaNs) that span more than the `limit_direction` or `limit_area` of a previous interpolation step during `main_df_resampled` preprocessing, `reindex` might introduce new NaNs that are then interpolated here. This could sometimes lead to "fabricated" data points across very long gaps if `interpolate` is not used carefully. However, the initial `dropna` on `main_df_resampled` reduces the likelihood of extremely long contiguous NaNs being passed to this step for decomposition, mitigating the risk.
+*   **Classification:** [Potential Improvement] (A minor point, but highlights a general consideration when extensively interpolating time series data).
+----------------------------------
+
+Workflow complete for problem 3.

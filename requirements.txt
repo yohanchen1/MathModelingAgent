@@ -1,2 +1,4 @@
-openai
-python-dotenv
+google-generativeai
+pandas
+openpyxl
+PyMuPDF

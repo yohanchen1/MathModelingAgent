@@ -1,0 +1,12 @@
+-- Thinking Process for thinking_log_extraction.txt --
+
+**Identifying Problem Areas**
+
+I'm currently focused on the structure of the text. I'm honing in on the "问题" markers and their associated numbers to isolate individual problem statements. Right now, the priority is accurately identifying each "问题" and its corresponding text.
+
+
+**Isolating the Text**
+
+I'm now immersed in dissecting the text, strategically pinpointing and isolating each problem statement. The numerical sequence following "问题" is crucial. I will extract the full text block for "问题1", and then "问题2", then "问题3", followed by "问题4", ensuring I grab all the relevant information.
+
+
